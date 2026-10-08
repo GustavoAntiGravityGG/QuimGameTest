@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mesa de fusão — Química | Beta</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root{--bg:#f1f4f2;--pn:#fff;--ink:#17231f;--mute:#667873;--ln:#d3dcd8;--ac:#0a8c76;--it:#fff}
+:root[data-theme=dark]{--bg:#0b1312;--pn:#111c1a;--ink:#dcebe7;--mute:#88a09a;--ln:#21342f;--ac:#3fdcbc;--it:#172623}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{display:flex;height:100dvh;overflow:hidden;background:var(--bg);color:var(--ink);font:15px/1.35 "Avenir Next","Segoe UI",system-ui,sans-serif;transition:background-color .4s,color .4s}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+/* Mesa de fusão: papel pontilhado + canvas de moléculas */
+#mesa{flex:1;min-width:0;position:relative;overflow:hidden;background:radial-gradient(var(--ln) 1px,transparent 1.5px) 0 0/26px 26px var(--bg);transition:background-color .4s}
+#fundo{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#barra{position:absolute;top:12px;left:16px;right:16px;display:flex;gap:8px;align-items:center;pointer-events:none;z-index:2}
+h1{margin:0 auto 0 0;font:700 19px Georgia,"Times New Roman",serif}
+.bt{pointer-events:auto;border:1px solid var(--ln);background:var(--pn);border-radius:999px;padding:6px 14px;cursor:pointer;transition:border-color .2s,background-color .4s}
+.bt:hover{border-color:var(--ac)}
+#dica{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:0 28px;text-align:center;color:var(--mute);pointer-events:none;transition:opacity .3s}
+#aviso{position:absolute;left:50%;bottom:20px;transform:translate(-50%,16px);opacity:0;padding:8px 16px;border-radius:18px;background:var(--ink);color:var(--bg);width:max-content;max-width:min(92%,520px);text-align:center;pointer-events:none;transition:.3s;z-index:99999}
+#aviso.on{opacity:1;transform:translate(-50%,0)}
+/* Itens arrastáveis */
+.item{position:fixed;z-index:10;min-width:92px;padding:8px 12px;text-align:center;border:1px solid var(--ln);border-radius:12px;background:var(--it);box-shadow:0 2px 8px #0002;cursor:grab;touch-action:none;user-select:none;transition:box-shadow .2s,border-color .2s,background-color .4s}
+.item.arr{cursor:grabbing;box-shadow:0 12px 26px #0004}
+.item.hot{border-color:var(--ac);box-shadow:0 0 0 4px color-mix(in srgb,var(--ac) 30%,transparent)}
+.s{display:block;font:700 24px/1.15 Georgia,"Times New Roman",serif}
+b{font-weight:600}
+small{display:block;color:var(--mute);font-size:12px}
+.pop{animation:pop .55s cubic-bezier(.2,1.5,.4,1)}
+.sh{animation:sh .3s}
+@keyframes pop{0%{transform:scale(.2) rotate(-8deg);opacity:0}100%{transform:none;opacity:1}}
+@keyframes sh{25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
+/* Painel lateral */
+#painel{flex:0 0 320px;display:flex;flex-direction:column;min-height:0;background:var(--pn);border-left:1px solid var(--ln);transition:background-color .4s,border-color .4s}
+#topo{padding:12px;border-bottom:1px solid var(--ln)}
+#q{width:100%;padding:9px 12px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);outline:0}
+#q:focus{border-color:var(--ac)}
+#cont{margin-top:8px;font-size:13px;color:var(--mute)}
+#lista{flex:1;overflow:auto;padding:6px}
+.sep{padding:10px 8px 4px;font-size:12px;color:var(--mute)}
+.row{display:flex;align-items:center;gap:10px;width:100%;padding:6px 8px;border:0;border-radius:10px;background:none;text-align:left;cursor:grab;user-select:none;touch-action:pan-y}
+.row:hover{background:var(--bg)}
+.row .s{flex:0 0 42px;font-size:21px;text-align:center}
+.new{animation:fl 1.8s}
+@keyframes fl{0%,60%{background:color-mix(in srgb,var(--ac) 28%,transparent)}}
+/* Configurações, rodapé de reset e diálogo de confirmação */
+#barra{justify-content:flex-end;z-index:50000}
+#menu{pointer-events:auto;position:absolute;top:calc(100% + 8px);right:0;display:grid;gap:12px;width:240px;padding:14px;border:1px solid var(--ln);border-radius:14px;background:var(--pn);box-shadow:0 10px 30px #0003}
+#menu[hidden]{display:none}
+#menu label{display:grid;gap:6px;font-size:13px;color:var(--mute)}
+input[type=range]{width:100%;accent-color:var(--ac)}
+#rodape{padding:10px 12px;border-top:1px solid var(--ln)}
+#rodape .bt{width:100%}
+.perigo{border-color:#d9483b;color:#d9483b}
+.perigo:disabled{opacity:.45;cursor:not-allowed}
+dialog{width:min(360px,92vw);padding:20px;border:1px solid var(--ln);border-radius:14px;background:var(--pn);color:var(--ink)}
+dialog::backdrop{background:#0009}
+dialog p{margin:0 0 12px}
+#zi,#ads{width:100%;padding:9px 12px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);outline:0}
+.acoes{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+/* Área do administrador: descobertas e crafting */
+#adm{width:min(680px,94vw)}
+#adp{max-width:340px;margin:0 auto}
+#ade{min-height:1.2em;margin:8px 0 0;color:#d9483b;font-size:13px}
+#abas{display:flex;gap:6px;margin-bottom:10px}
+#abas .on{border-color:var(--ac);color:var(--ac);font-weight:600}
+#adt{color:var(--mute);font-size:13px}
+#adg{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+#acr{display:grid;gap:8px}
+#adg,#acr{max-height:56vh;overflow:auto;padding:2px}
+#adg[hidden],#acr[hidden]{display:none}
+.dc,.cr{padding:8px 10px;border:1px solid var(--ln);border-radius:10px}
+.dc{text-align:center}
+.dc .s{font-size:22px}
+.cr small{font:13px Georgia,"Times New Roman",serif}
+.ok{border-color:#1f9d55;background:color-mix(in srgb,#1f9d55 18%,transparent)}
+.bl{opacity:.55;filter:grayscale(1)}
+/* Equação da reação e destaque de descoberta nova */
+#eqn{position:absolute;left:50%;bottom:64px;transform:translate(-50%,16px);max-width:92%;padding:12px 20px;text-align:center;border:1px solid var(--ln);border-radius:14px;background:var(--pn);box-shadow:0 8px 24px #0003;opacity:0;pointer-events:none;transition:.35s;z-index:99998}
+#eqn.on{opacity:1;transform:translate(-50%,0)}
+#eqn span{display:block;font:700 21px Georgia,"Times New Roman",serif}
+#eqn.nv{border-color:var(--ac);box-shadow:0 0 0 3px color-mix(in srgb,var(--ac) 30%,transparent),0 8px 24px #0003}
+#eqn.nv small{color:var(--ac);font-weight:600}
+.nova{border-color:var(--ac);animation:pop .55s cubic-bezier(.2,1.5,.4,1),glow 2.4s}
+@keyframes glow{0%,70%{box-shadow:0 0 0 5px color-mix(in srgb,var(--ac) 45%,transparent),0 0 28px var(--ac)}}
+/* Conta Google: botão na barra, menu da conta e bolinha de status da sincronização */
+#g{display:inline-flex;align-items:center;gap:6px}
+#g img{width:20px;height:20px;border-radius:50%;display:block}
+#gmenu{pointer-events:auto;position:absolute;top:calc(100% + 8px);right:0;display:grid;gap:10px;width:260px;padding:14px;border:1px solid var(--ln);border-radius:14px;background:var(--pn);box-shadow:0 10px 30px #0003}
+#gmenu[hidden]{display:none}
+#gmenu p{margin:0;font-size:13px;color:var(--mute);overflow-wrap:anywhere}
+#gmenu b{display:block;font-size:14px}
+.gd{display:inline-block;flex:none;width:8px;height:8px;border-radius:50%;background:var(--mute)}
+.gd[hidden]{display:none}
+.gd.ok{background:#1f9d55}.gd.pen{background:#e0a100}.gd.err{background:#d9483b}
+@media(max-width:720px){h1,.tx{display:none}#barra{flex-wrap:wrap}body{flex-direction:column}#painel{flex:0 0 40%;border-left:0;border-top:1px solid var(--ln)}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main id="mesa">
+  <canvas id="fundo"></canvas>
+  <div id="barra">
+    <h1>Mesa de fusão</h1>
+    <button class="bt" id="limpar">Limpar mesa</button>
+    <button class="bt" id="desc" aria-label="Descobertas (administrador)">🔒<span class="tx"> Descobertas</span></button>
+    <button class="bt" id="craf" aria-label="Crafting (administrador)">📖<span class="tx"> Crafting</span></button>
+    <button class="bt" id="g" aria-haspopup="true" aria-expanded="false"><span id="gic">☁️</span><span class="tx" id="gtx"> Entrar com Google</span><i class="gd" id="gdot" hidden></i></button>
+    <button class="bt" id="cfg" aria-label="Configurações" aria-expanded="false" title="Configurações">⚙️</button>
+    <button class="bt" id="tema" aria-label="Alternar tema claro/escuro"></button>
+    <div id="gmenu" hidden>
+      <div><b id="gnome"></b><p id="gmail"></p></div>
+      <p id="gst" role="status"></p>
+      <button class="bt" id="gsync"></button>
+      <button class="bt" id="gsair">Sair da conta Google</button>
+    </div>
+    <div id="menu" hidden>
+      <button class="bt" id="mudo"></button>
+      <label>Volume da música: <span id="vv"></span>%<input type="range" id="vol" min="0" max="100" aria-label="Volume da música"></label>
+    </div>
+  </div>
+  <p id="dica">Arraste elementos do painel e solte um sobre o outro para reagir.<br>Clique direito (ou arraste para fora) para remover.</p>
+  <div id="aviso" role="status"></div>
+  <div id="eqn" role="status"></div>
+</main>
+<aside id="painel">
+  <div id="topo">
+    <input id="q" type="search" placeholder="Buscar por nome, símbolo ou nº" aria-label="Buscar">
+    <div id="cont"></div>
+  </div>
+  <div id="lista"></div>
+  <div id="rodape"><button class="bt perigo" id="zerar">Zerar descobertas</button></div>
+</aside>
+<dialog id="zera">
+  <p id="zt"></p>
+  <input id="zi" placeholder="Digite ZERAR" autocomplete="off" aria-label="Digite ZERAR para confirmar" hidden>
+  <div class="acoes"><button class="bt" id="zno">Cancelar</button><button class="bt perigo" id="zok"></button></div>
+</dialog>
+
+<dialog id="adm">
+  <div id="adp">
+    <p><b>Área do craft</b><br>Digite a senha para ver as descobertas e o crafting.</p>
+    <input id="ads" type="password" placeholder="Senha" autocomplete="off" aria-label="Senha do administrador">
+    <p id="ade"></p>
+    <div class="acoes"><button class="bt" id="adx">Cancelar</button><button class="bt" id="adok">Entrar</button></div>
+  </div>
+  <div id="adv" hidden>
+    <div id="abas"><button class="bt" data-t="d">Descobertas</button><button class="bt" data-t="c">Crafting</button></div>
+    <p id="adt"></p>
+    <div id="adg"></div>
+    <div id="acr" hidden></div>
+    <div class="acoes"><button class="bt" id="adf">Fechar</button></div>
+  </div>
+</dialog>
+
+<script>
+// ===================== DADOS (edite aqui) =====================
+// Elementos: "número símbolo nome" — 1 a 56 e 74 a 83 (66 elementos).
+const ELEMENTOS=`1 H Hidrogênio|2 He Hélio|3 Li Lítio|4 Be Berílio|5 B Boro|6 C Carbono|7 N Nitrogênio|8 O Oxigênio
+9 F Flúor|10 Ne Neônio|11 Na Sódio|12 Mg Magnésio|13 Al Alumínio|14 Si Silício|15 P Fósforo|16 S Enxofre
+17 Cl Cloro|18 Ar Argônio|19 K Potássio|20 Ca Cálcio|21 Sc Escândio|22 Ti Titânio|23 V Vanádio|24 Cr Cromo
+25 Mn Manganês|26 Fe Ferro|27 Co Cobalto|28 Ni Níquel|29 Cu Cobre|30 Zn Zinco|31 Ga Gálio|32 Ge Germânio
+33 As Arsênio|34 Se Selênio|35 Br Bromo|36 Kr Criptônio|37 Rb Rubídio|38 Sr Estrôncio|39 Y Ítrio|40 Zr Zircônio
+41 Nb Nióbio|42 Mo Molibdênio|43 Tc Tecnécio|44 Ru Rutênio|45 Rh Ródio|46 Pd Paládio|47 Ag Prata|48 Cd Cádmio
+49 In Índio|50 Sn Estanho|51 Sb Antimônio|52 Te Telúrio|53 I Iodo|54 Xe Xenônio|55 Cs Césio|56 Ba Bário
+74 W Tungstênio|75 Re Rênio|76 Os Ósmio|77 Ir Irídio|78 Pt Platina|79 Au Ouro|80 Hg Mercúrio|81 Tl Tálio|82 Pb Chumbo|83 Bi Bismuto`;
+
+// Receitas: "A+B=id|Nome|Fórmula|Emoji|Equação opcional". A e B são símbolos de elementos ou ids de compostos
+// (a ordem não importa). Átomos de H, O, N, F, Cl, Br e I formam primeiro a molécula X₂ (H+H=h2) e as reações usam X₂.
+// Sem "Equação", ela é balanceada automaticamente; use a equação explícita quando houver subprodutos.
+// Linha sem Nome/Fórmula/Emoji (id||||equação) = caminho alternativo para um composto já definido.
+// Exceção: sais 1:1 de metal + halogênio (NaCl, KCl, AgCl, NaBr, AgBr, KI, AgI, NaF) aceitam o átomo (Na+Cl)
+// e também a molécula (Na+cl2); a equação mostrada continua sendo a balanceada, com X₂ (2Na + Cl₂ → 2NaCl).
+const RECEITAS=`H+H=h2|Gás hidrogênio|H₂|🎈|2H → H₂
+O+O=o2|Gás oxigênio|O₂|🫧|2O → O₂
+N+N=n2|Gás nitrogênio|N₂|💨|2N → N₂
+F+F=f2|Gás flúor|F₂|🟡|2F → F₂
+Cl+Cl=cl2|Gás cloro|Cl₂|🟢|2Cl → Cl₂
+Br+Br=br2|Bromo líquido|Br₂|🟤|2Br → Br₂
+I+I=i2|Iodo sólido|I₂|🟣|2I → I₂
+O+o2=o3|Ozônio|O₃|🌐|3O₂ → 2O₃
+h2+O=agua|Água|H₂O|💧
+h2+o2=h2o2|Água oxigenada|H₂O₂|🩹
+h2+n2=nh3|Amônia|NH₃|🧴
+h2+cl2=hcl|Ácido clorídrico|HCl|🧪
+h2+f2=hf|Ácido fluorídrico|HF|🫗
+h2+br2=hbr|Ácido bromídrico|HBr|🟠
+h2+i2=hi|Ácido iodídrico|HI|🔮
+C+h2=ch4|Metano|CH₄|🔥
+h2+S=h2s|Gás sulfídrico|H₂S|🥚
+h2+Hg=h2hg|Hidreto de mercúrio|HgH₂|🌡️
+h2+Li=lih|Hidreto de lítio|LiH|🔋
+h2+Na=nah|Hidreto de sódio|NaH|⚪
+h2+Ca=cah2|Hidreto de cálcio|CaH₂|🏔️
+C+o2=co2|Dióxido de carbono|CO₂|🌫️
+C+co2=co|Monóxido de carbono|CO|☁️
+co+o2=co2
+S+o2=so2|Dióxido de enxofre|SO₂|🌋
+so2+o2=so3|Trióxido de enxofre|SO₃|🟨
+n2+o2=no|Óxido nítrico|NO|🟠
+no+o2=no2|Dióxido de nitrogênio|NO₂|🟤
+Ca+o2=cao|Cal virgem|CaO|🪨
+Mg+o2=mgo|Óxido de magnésio|MgO|✨
+Fe+o2=ferrugem|Ferrugem|Fe₂O₃|🟫
+Al+o2=alumina|Alumina|Al₂O₃|💎
+Si+o2=silica|Sílica|SiO₂|🏖️
+Zn+o2=zno|Óxido de zinco|ZnO|☀️
+Ti+o2=tio2|Dióxido de titânio|TiO₂|🤍
+Cu+o2=cuo|Óxido de cobre|CuO|⚫
+Cr+o2=cr2o3|Verde de cromo|Cr₂O₃|🌿
+Mn+o2=mno2|Dióxido de manganês|MnO₂|🔋
+P+o2=p2o5|Pentóxido de fósforo|P₄O₁₀|⬜
+Zr+o2=zro2|Zircônia|ZrO₂|💠
+Co+o2=coo|Óxido de cobalto|CoO|🔹
+Ni+o2=nio|Óxido de níquel|NiO|🟩
+Na+o2=na2o|Óxido de sódio|Na₂O|🔆
+K+o2=k2o|Óxido de potássio|K₂O|🌱
+Li+o2=li2o|Óxido de lítio|Li₂O|🪫
+Ba+o2=bao|Óxido de bário|BaO|🎇
+B+o2=b2o3|Óxido de boro|B₂O₃|🔶
+V+o2=v2o5|Pentóxido de vanádio|V₂O₅|🟧
+W+o2=wo3|Trióxido de tungstênio|WO₃|🟡
+Pb+o2=pbo|Óxido de chumbo|PbO|🟥
+Sn+o2=sno2|Dióxido de estanho|SnO₂|🥫
+Hg+o2=hgo|Óxido de mercúrio|HgO|🔴
+Bi+o2=bi2o3|Óxido de bismuto|Bi₂O₃|🌤️
+agua+so3=h2so4|Ácido sulfúrico|H₂SO₄|⚗️
+agua+so2=h2so3|Ácido sulfuroso|H₂SO₃|🌧️
+agua+co2=h2co3|Ácido carbônico|H₂CO₃|🥂
+agua+no2=hno3|Ácido nítrico|HNO₃|🧫|3NO₂ + H₂O → 2HNO₃ + NO
+agua+p2o5=h3po4|Ácido fosfórico|H₃PO₄|🥤
+agua+b2o3=h3bo3|Ácido bórico|H₃BO₃|👁️
+agua+wo3=h2wo4|Ácido túngstico|H₂WO₄|🔦
+Na+agua=naoh|Soda cáustica|NaOH|🧼|2Na + 2H₂O → 2NaOH + H₂
+K+agua=koh|Hidróxido de potássio|KOH|🧽|2K + 2H₂O → 2KOH + H₂
+Li+agua=lioh|Hidróxido de lítio|LiOH|🚀|2Li + 2H₂O → 2LiOH + H₂
+Ba+agua=baoh2|Hidróxido de bário|Ba(OH)₂|🧂|Ba + 2H₂O → Ba(OH)₂ + H₂
+agua+cao=caoh2|Cal hidratada|Ca(OH)₂|🏗️
+agua+mgo=mgoh2|Leite de magnésia|Mg(OH)₂|🥛
+agua+na2o=naoh
+agua+k2o=koh
+agua+bao=baoh2
+agua+nh3=nh4oh|Hidróxido de amônio|NH₄OH|🧹
+Na+Cl=sal|Sal de cozinha|NaCl|🧂
+Na+cl2=sal
+hcl+naoh=sal||||HCl + NaOH → NaCl + H₂O
+K+Cl=kcl|Cloreto de potássio|KCl|🍌
+K+cl2=kcl
+Ca+cl2=cacl2|Cloreto de cálcio|CaCl₂|❄️
+Mg+cl2=mgcl2|Cloreto de magnésio|MgCl₂|🌊
+Al+cl2=alcl3|Cloreto de alumínio|AlCl₃|🧊
+Fe+cl2=fecl3|Cloreto férrico|FeCl₃|🟠
+Cu+cl2=cucl2|Cloreto de cobre|CuCl₂|🟢
+Zn+cl2=zncl2|Cloreto de zinco|ZnCl₂|🔩
+Ag+Cl=agcl|Cloreto de prata|AgCl|⚪
+Ag+cl2=agcl
+Na+Br=nabr|Brometo de sódio|NaBr|🏊
+Na+br2=nabr
+Ag+Br=agbr|Brometo de prata|AgBr|📷
+Ag+br2=agbr
+K+I=ki|Iodeto de potássio|KI|🥼
+K+i2=ki
+Ag+I=agi|Iodeto de prata|AgI|☔
+Ag+i2=agi
+Na+F=naf|Fluoreto de sódio|NaF|🦷
+Na+f2=naf
+Ca+f2=caf2|Fluorita|CaF₂|💜
+Al+f2=alf3|Fluoreto de alumínio|AlF₃|🏭
+Xe+f2=xef2|Difluoreto de xenônio|XeF₂|🪩
+Kr+f2=krf2|Difluoreto de criptônio|KrF₂|🧿
+hcl+nh3=nh4cl|Cloreto de amônio|NH₄Cl|🌬️
+cuo+h2so4=cuso4|Sulfato de cobre|CuSO₄|🔵|CuO + H₂SO₄ → CuSO₄ + H₂O
+Ba+h2so4=baso4|Sulfato de bário|BaSO₄|🩻|Ba + H₂SO₄ → BaSO₄ + H₂
+Zn+h2so4=znso4|Sulfato de zinco|ZnSO₄|💧|Zn + H₂SO₄ → ZnSO₄ + H₂
+Mg+h2so4=mgso4|Sal de Epsom|MgSO₄|🛁|Mg + H₂SO₄ → MgSO₄ + H₂
+Fe+h2so4=feso4|Sulfato de ferro|FeSO₄|🟩|Fe + H₂SO₄ → FeSO₄ + H₂
+Ca+h2so4=caso4|Gesso|CaSO₄|🧱|Ca + H₂SO₄ → CaSO₄ + H₂
+naoh+h2so4=na2so4|Sulfato de sódio|Na₂SO₄|🧺|2NaOH + H₂SO₄ → Na₂SO₄ + 2H₂O
+cao+co2=caco3|Calcário|CaCO₃|🐚
+caoh2+co2=caco3||||Ca(OH)₂ + CO₂ → CaCO₃ + H₂O
+naoh+co2=na2co3|Carbonato de sódio|Na₂CO₃|🥣|2NaOH + CO₂ → Na₂CO₃ + H₂O
+h2co3+na2co3=nahco3|Bicarbonato de sódio|NaHCO₃|🍰
+Ca+h3po4=ca3po42|Fosfato de cálcio|Ca₃(PO₄)₂|🦴|3Ca + 2H₃PO₄ → Ca₃(PO₄)₂ + 3H₂
+Ag+hno3=agno3|Nitrato de prata|AgNO₃|🪞|3Ag + 4HNO₃ → 3AgNO₃ + NO + 2H₂O
+Cu+hno3=cuno32|Nitrato de cobre|Cu(NO₃)₂|🟦|3Cu + 8HNO₃ → 3Cu(NO₃)₂ + 2NO + 4H₂O
+caco3+silica=vidro|Vidro|SiO₂ amorfo|🪟|CaCO₃ + SiO₂ → CaSiO₃ (vidro) + CO₂
+Ag+S=ag2s|Sulfeto de prata|Ag₂S|🖤
+Hg+S=hgs|Cinábrio|HgS|🩸
+Pb+S=pbs|Galena|PbS|⛏️
+Cd+S=cds|Amarelo de cádmio|CdS|🌻
+Zn+S=zns|Sulfeto de zinco|ZnS|🌟
+Fe+S=fes|Sulfeto de ferro|FeS|⛓️
+fes+S=pirita|Pirita|FeS₂|✨
+Cu+S=cus|Sulfeto de cobre|CuS|🫐
+Mo+S=mos2|Dissulfeto de molibdênio|MoS₂|🛢️
+Sb+S=sb2s3|Estibinita|Sb₂S₃|💫
+Ga+n2=gan|Nitreto de gálio|GaN|💡
+B+n2=bn|Nitreto de boro|BN|🔷
+Al+n2=aln|Nitreto de alumínio|AlN|🧱
+C+W=wc|Carbeto de tungstênio|WC|🛠️
+C+Si=sic|Carbeto de silício|SiC|🔸
+Ca+C=cac2|Carbeto de cálcio|CaC₂|🪔
+As+Ga=gaas|Arseneto de gálio|GaAs|📡
+In+P=inp|Fosfeto de índio|InP|📶
+Cd+Te=cdte|Telureto de cádmio|CdTe|🔆
+Cd+Se=cdse|Seleneto de cádmio|CdSe|🌈
+Se+Zn=znse|Seleneto de zinco|ZnSe|🔬
+cac2+agua=c2h2|Acetileno|C₂H₂|🔦|CaC₂ + 2H₂O → C₂H₂ + Ca(OH)₂
+c2h2+h2=c2h4|Eteno (etileno)|C₂H₄|🍏
+c2h4+h2=c2h6|Etano|C₂H₆|🕯️
+c2h4+agua=etanol|Etanol|C₂H₅OH|🍺
+ch4+o2=metanol|Metanol|CH₃OH|🪵
+co+h2=metanol
+etanol+o2=acetico|Ácido acético|CH₃COOH|🥗|C₂H₅OH + O₂ → CH₃COOH + H₂O
+metanol+o2=hcho|Formaldeído|HCHO|🧬|2CH₃OH + O₂ → 2HCHO + 2H₂O
+c2h2+c2h2=benzeno|Benzeno|C₆H₆|⬡|3C₂H₂ → C₆H₆
+ch4+cl2=ch3cl|Clorometano|CH₃Cl|☁️|CH₄ + Cl₂ → CH₃Cl + HCl
+nh3+co2=ureia|Ureia|CO(NH₂)₂|🌾|2NH₃ + CO₂ → CO(NH₂)₂ + H₂O
+Na+Hg=namalgama|Amálgama de sódio|Na–Hg|🔘
+ch3cl+namalgama=dmhg|Dimetilmercúrio|(CH₃)₂Hg|☠️|2CH₃Cl + 2Na + Hg → (CH₃)₂Hg + 2NaCl
+C+Fe=aco|Aço|Fe–C|⚙️
+aco+nicromo=inox|Aço inoxidável|Fe–Cr–Ni|🍴
+Cu+Sn=bronze|Bronze|Cu–Sn|🔔
+Cu+Zn=latao|Latão|Cu–Zn|🎺
+Au+Cu=ourorose|Ouro rosé|Au–Cu|🌹
+Au+Pd=ourobranco|Ouro branco|Au–Pd|💍
+Pb+Sn=solda|Solda|Sn–Pb|🔩
+Ni+Ti=nitinol|Nitinol|Ni–Ti|🦾
+Ir+Pt=ptir|Liga platina-irídio|Pt–Ir|📏
+Al+Mg=magnalio|Magnálio|Al–Mg|✈️
+Al+Sc=alsc|Liga alumínio-escândio|Al–Sc|🚲
+Bi+Sn=ligafusivel|Liga fusível|Bi–Sn|🫠
+Cu+Ni=cuproniquel|Cuproníquel|Cu–Ni|🪙
+magnalio+Cu=duralumin|Duralumínio|Al–Cu–Mg|🛩️
+Ag+Cu=pratalei|Prata de lei|Ag–Cu|🍽️
+Ag+Au=electrum|Electrum|Au–Ag|🏺
+Au+Hg=amalgama|Amálgama de ouro|Au–Hg|🥈
+Fe+Ni=invar|Invar|Fe–Ni|🕰️
+Cr+Ni=nicromo|Nicromo|Ni–Cr|🍞
+Nb+Ti=nbti|Nióbio-titânio|Nb–Ti|🧲
+Be+Cu=cube|Cobre-berílio|Cu–Be|🔧
+K+Na=nak|Liga sódio-potássio|Na–K|🫗
+Pt+Rh=ptrh|Liga platina-ródio|Pt–Rh|🚗
+coo+alumina=azulcobalto|Azul de cobalto|CoAl₂O₄|🔷`;
+
+// ===================== PREPARO =====================
+const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s);
+const ls=(k,v)=>{try{return v===undefined?localStorage.getItem(k):localStorage.setItem(k,v)}catch(e){}};
+const DB={},REC={},ELS=[],SUBS=[];                 // DB: id -> {s: símbolo/emoji, n: nome, sub: fórmula/nº}
+const chave=(a,b)=>[a,b].sort().join('+');        // ordem dos ingredientes não importa
+ELEMENTOS.split(/[|\n]/).map(s=>s.trim()).filter(Boolean).forEach(s=>{
+  const[n,sy,nm]=s.split(' ');DB[sy]={id:sy,s:sy,n:nm,num:+n,sub:'nº '+n,el:1};ELS.push(sy)});
+const EQ={},ORD={};                                 // equações explícitas (com subprodutos) e ordem original dos reagentes
+RECEITAS.split('\n').map(s=>s.trim()).filter(Boolean).forEach(l=>{
+  const[ing,res]=l.split('='),[id,nome,f,em,eq]=res.split('|'),[a,b]=ing.split('+'),k=chave(a,b);
+  if(nome&&!DB[id]){DB[id]={id,s:em,n:nome,sub:f};SUBS.push(id)}
+  REC[k]=id;ORD[k]=[a,b];if(eq)EQ[k]=eq});
+
+let found=[];                                       // substâncias descobertas (em ordem)
+try{found=JSON.parse(ls('qf.found')||'[]').filter(i=>DB[i]&&!DB[i].el)}catch(e){}
+let mod=+ls('qf.mod')||0,zerou=+ls('qf.zerou')||0;   // p/ o Drive: quando mudou por último aqui e quando foi o último "zerar" (ms)
+function grava(zera){                               // salva neste navegador e agenda o envio ao Google Drive (se conectado)
+  mod=Date.now();if(zera&&guser)zerou=mod;
+  ls('qf.found',JSON.stringify(found));ls('qf.mod',mod);ls('qf.zerou',zerou);
+  agendar();
+}
+const mesa=$('#mesa'),root=document.documentElement,still=matchMedia('(prefers-reduced-motion:reduce)').matches;
+let z=10,tm,mols=[],tocou=0;
+const norm=t=>t.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+
+// ===================== PAINEL LATERAL =====================
+function painel(novo){
+  const q=norm($('#q').value.trim()),
+  ok=d=>!q||norm(d.n).includes(q)||(d.el?norm(d.s).startsWith(q)||d.num==q:norm(d.sub).includes(q)),
+  lin=d=>`<button class="row${d.id===novo?' new':''}" data-id="${d.id}"><span class="s">${d.s}</span><span><b>${d.n}</b><small>${d.sub}</small></span></button>`,
+  e=ELS.map(i=>DB[i]).filter(ok),s=found.map(i=>DB[i]).filter(ok);
+  $('#lista').innerHTML=(e.length?'<div class="sep">Elementos</div>'+e.map(lin).join(''):'')
+    +(s.length?'<div class="sep">Substâncias descobertas</div>'+s.map(lin).join(''):'')||'<div class="sep">Nada encontrado.</div>';
+  $('#cont').textContent=`Descobertas: ${found.length} / ${SUBS.length}`;
+  if(novo)$('.new')?.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+
+// ===================== EQUAÇÕES QUÍMICAS =====================
+const DIA=['H','N','O','F','Cl','Br','I'];          // elementos que reagem como moléculas diatômicas (X₂)
+const forma=i=>DB[i].el?(DIA.includes(i)?i+'₂':i):DB[i].sub;
+function conta(f){                                  // "Ca(OH)₂" -> {Ca:1,O:2,H:2}
+  const st=[{}],re=/([A-Z][a-z]?)(\d*)|(\()|\)(\d*)/g;let m;
+  f=f.replace(/[₀-₉]/g,c=>c.charCodeAt(0)-8320);
+  while(m=re.exec(f)){
+    if(m[1]){const o=st[st.length-1];o[m[1]]=(o[m[1]]||0)+(+m[2]||1)}
+    else if(m[3])st.push({});
+    else{const o=st.pop(),k=+m[4]||1,p=st[st.length-1];for(const e in o)p[e]=(p[e]||0)+o[e]*k}
+  }
+  return st[0];
+}
+function equacao(a,b,id){                           // ex.: "2H₂ + O₂ → 2H₂O" (explícita ou balanceada automaticamente)
+  const k=chave(a,b);if(EQ[k])return EQ[k];
+  const rs=ORD[k].map(forma),p=DB[id].sub,n=c=>c>1?c:'';
+  if(p.includes('–'))return rs.join(' + ')+' → '+DB[id].n;     // ligas: sem balanceamento
+  try{
+    const C=[...rs,p].map(conta),el=new Set(C.flatMap(Object.keys));let best,min=99;
+    for(let x=1;x<9;x++)for(let y=1;y<9;y++)for(let w=1;w<9;w++)
+      if(x+y+w<min&&[...el].every(e=>x*(C[0][e]|0)+y*(C[1][e]|0)==w*(C[2][e]|0))){min=x+y+w;best=[x,y,w]}
+    if(best)return n(best[0])+rs[0]+' + '+n(best[1])+rs[1]+' → '+n(best[2])+p;
+  }catch(e){}
+  return rs.join(' + ')+' → '+p;
+}
+let te;
+function mostraEq(eq,nova,d){                       // mostra a equação por ~6 s; destaque se for descoberta nova
+  const e=$('#eqn');e.className=nova?'on nv':'on';
+  e.innerHTML=`<small>${nova?'✨ Nova descoberta: ':''}${d.s} ${d.n}</small><span>${eq}</span>`;
+  clearTimeout(te);te=setTimeout(()=>e.className='',6000);
+}
+
+// ===================== ITENS NA MESA =====================
+const dica=()=>{$('#dica').style.opacity=$('.item')?0:1};
+function aviso(t,ms=1800){const e=$('#aviso');e.textContent=t;e.classList.add('on');clearTimeout(tm);tm=setTimeout(()=>e.classList.remove('on'),ms)}
+function criar(id,x,y,cls=''){                     // cria um item centrado em (x, y)
+  const d=DB[id],el=document.createElement('div');
+  el.className='item '+cls;el.dataset.id=id;
+  el.innerHTML=`<span class="s">${d.s}</span><b>${d.n}</b><small>${d.sub}</small>`;
+  document.body.append(el);
+  el.style.left=x-el.offsetWidth/2+'px';el.style.top=y-el.offsetHeight/2+'px';el.style.zIndex=++z;
+  el.onpointerdown=e=>{if(!e.button){e.preventDefault();arrastar(el,e)}};
+  el.oncontextmenu=e=>{e.preventDefault();el.remove();dica()};   // clique direito remove
+  dica();return el;
+}
+function aleatorio(el){                             // posição aleatória dentro da mesa
+  const m=mesa.getBoundingClientRect();
+  el.style.left=m.left+30+Math.random()*Math.max(10,m.width-170)+'px';
+  el.style.top=m.top+60+Math.random()*Math.max(10,m.height-160)+'px';
+}
+function adicionar(id){aleatorio(criar(id,0,0,'pop'))}
+function perto(el){                                 // item mais próximo (candidato à reação)
+  const a=el.getBoundingClientRect();let best=null,bd=76;
+  $$('.item').forEach(o=>{if(o===el)return;const b=o.getBoundingClientRect(),
+    d=Math.hypot(a.left+a.width/2-b.left-b.width/2,a.top+a.height/2-b.top-b.height/2);
+    if(d<bd){bd=d;best=o}});
+  return best;
+}
+function arrastar(el,e,doPainel){
+  const r=el.getBoundingClientRect(),dx=e.clientX-r.left,dy=e.clientY-r.top,sx=e.clientX,sy=e.clientY;let moveu=0;
+  el.setPointerCapture(e.pointerId);el.style.zIndex=++z;el.classList.add('arr');
+  el.onpointermove=v=>{
+    if(Math.abs(v.clientX-sx)+Math.abs(v.clientY-sy)>4)moveu=1;
+    el.style.left=v.clientX-dx+'px';el.style.top=v.clientY-dy+'px';
+    $$('.hot').forEach(x=>x.classList.remove('hot'));perto(el)?.classList.add('hot');
+  };
+  el.onpointerup=el.onpointercancel=()=>{
+    el.onpointermove=el.onpointerup=el.onpointercancel=null;el.classList.remove('arr');
+    $$('.hot').forEach(x=>x.classList.remove('hot'));
+    if(doPainel&&!moveu){aleatorio(el);el.classList.add('pop')}   // clique simples no painel
+    else soltar(el);
+  };
+}
+function soltar(el){
+  const r=el.getBoundingClientRect(),m=mesa.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
+  if(cx<m.left||cx>m.right||cy<m.top||cy>m.bottom){el.remove();dica();return}   // fora da mesa: descarta
+  const o=perto(el);if(o)combinar(el,o);
+}
+function combinar(a,b){
+  const id=REC[chave(a.dataset.id,b.dataset.id)];
+  if(!id){aviso(`Sem reação: ${DB[a.dataset.id].n} + ${DB[b.dataset.id].n}`);a.classList.add('sh');setTimeout(()=>a.classList.remove('sh'),350);return}
+  const ra=a.getBoundingClientRect(),rb=b.getBoundingClientRect(),d=DB[id];
+  const x=(ra.left+ra.width/2+rb.left+rb.width/2)/2,y=(ra.top+ra.height/2+rb.top+rb.height/2)/2;
+  const nova=!found.includes(id),eq=equacao(a.dataset.id,b.dataset.id,id);
+  a.remove();b.remove();criar(id,x,y,nova?'pop nova':'pop');
+  mostraEq(eq,nova,d);
+  if(nova){found.push(id);grava();painel(id)}
+}
+
+// ===================== FUNDO: MOLÉCULAS FLUTUANTES =====================
+const cv=$('#fundo'),cx=cv.getContext('2d');let W=0,H=0;
+function ajusta(){const r=devicePixelRatio||1;W=cv.clientWidth;H=cv.clientHeight;cv.width=W*r;cv.height=H*r;cx.setTransform(r,0,0,r,0,0);if(still)quadro()}
+function nova(){                                    // molécula de 2 a 4 átomos ligados
+  const n=2+Math.random()*3|0,at=[{x:0,y:0,r:7+Math.random()*7}];
+  for(let i=1;i<n;i++){const p=at[Math.random()*i|0],a=Math.random()*6.28,d=26+Math.random()*16;
+    at.push({x:p.x+Math.cos(a)*d,y:p.y+Math.sin(a)*d,r:5+Math.random()*7,p})}
+  return{x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*.35,vy:(Math.random()-.5)*.35,a:Math.random()*6.28,va:(Math.random()-.5)*.004,at};
+}
+function quadro(){
+  cx.clearRect(0,0,W,H);
+  cx.fillStyle=cx.strokeStyle=root.dataset.theme=='dark'?'rgba(170,215,205,.17)':'rgba(120,120,120,.3)';cx.lineWidth=3;
+  for(const m of mols){
+    m.x+=m.vx;m.y+=m.vy;m.a+=m.va;
+    if(m.x<-90)m.x=W+90;if(m.x>W+90)m.x=-90;if(m.y<-90)m.y=H+90;if(m.y>H+90)m.y=-90;
+    const c=Math.cos(m.a),s=Math.sin(m.a),P=q=>[m.x+q.x*c-q.y*s,m.y+q.x*s+q.y*c];
+    for(const q of m.at){const[x,y]=P(q);
+      if(q.p){const[px,py]=P(q.p);cx.beginPath();cx.moveTo(px,py);cx.lineTo(x,y);cx.stroke()}
+      cx.beginPath();cx.arc(x,y,q.r,0,6.283);cx.fill()}
+  }
+  if(!still)requestAnimationFrame(quadro);
+}
+
+// ===================== MÚSICA DE FUNDO (sintetizada no navegador, sem arquivos) =====================
+const ACORDES=[[220,261.6,329.6],[174.6,220,261.6],[261.6,329.6,392],[196,246.9,293.7]]; // Lá m, Fá, Dó, Sol (Hz)
+const ESCALA=[440,523.3,587.3,659.3,784,880];       // notas dos "sinos" (pentatônica de Lá menor)
+let au,mestre,passo=0,vol=+(ls('qf.vol')??40),mudo=ls('qf.mudo')=='1';
+function volume(){if(mestre)mestre.gain.setTargetAtTime(mudo?0:vol/100,au.currentTime,.1)}
+function musica(){                                  // navegadores só liberam o áudio após um clique/toque
+  if(au)return au.state=='suspended'&&au.resume();
+  au=new(window.AudioContext||window.webkitAudioContext)();
+  mestre=au.createGain();
+  const f=au.createBiquadFilter(),d=au.createDelay(),fb=au.createGain(),w=au.createGain();
+  f.type='lowpass';f.frequency.value=1800;d.delayTime.value=.5;fb.gain.value=.4;w.gain.value=.35;
+  f.connect(mestre);f.connect(d);d.connect(fb);fb.connect(d);d.connect(w);w.connect(mestre);mestre.connect(au.destination);
+  volume();
+  const nota=(hz,t,dur,v,tipo)=>{
+    const o=au.createOscillator(),g=au.createGain();o.type=tipo;o.frequency.value=hz;
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+dur*.3);g.gain.linearRampToValueAtTime(0,t+dur);
+    o.connect(g);g.connect(f);o.start(t);o.stop(t+dur)};
+  (function tique(){
+    if(au.state=='running'){
+      const t=au.currentTime+.05;
+      if(passo%16==0)ACORDES[passo/16%4].forEach(hz=>nota(hz,t,11,.12,'sine'));      // novo acorde a cada ~9,6 s
+      if(Math.random()<.55)nota(ESCALA[Math.random()*6|0],t,2.4,.07,'triangle');    // "sino" ocasional
+      passo++;
+    }
+    setTimeout(tique,600);
+  })();
+}
+
+// ===================== CONFIGURAÇÕES (música) =====================
+function menu(abrir){$('#menu').hidden=!abrir;$('#cfg').setAttribute('aria-expanded',!!abrir)}
+function som(){                                     // atualiza a interface, salva e aplica o volume
+  $('#mudo').textContent=mudo?'🔇 Música desligada':'🔊 Música ligada';
+  $('#vv').textContent=vol;$('#vol').value=vol;
+  ls('qf.vol',vol);ls('qf.mudo',+mudo);volume();
+}
+$('#cfg').onclick=()=>menu($('#menu').hidden);
+$('#mudo').onclick=()=>{mudo=!mudo;som()};
+$('#vol').oninput=e=>{vol=+e.target.value;if(vol)mudo=false;som()};
+addEventListener('pointerdown',e=>{if(!e.target.closest('#menu,#cfg'))menu(false)});
+['pointerup','touchend','click','keydown'].forEach(t=>addEventListener(t,e=>{musica();if(e.key=='Escape'){menu(false);menuG(false)}}));
+som();
+
+// ===================== ZERAR DESCOBERTAS (confirmação tripla) =====================
+const TX=['Zerar todas as descobertas? Você perderá todas as substâncias encontradas.','Tem certeza? Esta ação não pode ser desfeita.','Última confirmação: digite ZERAR para apagar tudo.'];
+let et=0;
+function etapa(n){
+  et=n;$('#zt').textContent=`(${n}/3) `+TX[n-1]+(guser&&n==1?' A cópia no Google Drive também será zerada.':'');$('#zi').hidden=n<3;$('#zi').value='';
+  $('#zok').textContent=n<3?'Continuar':'Apagar tudo';$('#zok').disabled=n==3;if(n==3)$('#zi').focus();
+}
+$('#zerar').onclick=()=>{etapa(1);$('#zera').showModal()};
+$('#zno').onclick=()=>$('#zera').close();
+$('#zi').oninput=e=>{$('#zok').disabled=e.target.value.trim().toUpperCase()!='ZERAR'};
+$('#zi').onkeydown=e=>{if(e.key=='Enter'&&!$('#zok').disabled)$('#zok').click()};
+$('#zok').onclick=()=>{
+  if(et<3)return etapa(et+1);
+  found=[];grava(true);                                          // se estiver no Google, o Drive também é zerado
+  $$('.item').forEach(x=>{if(!DB[x.dataset.id].el)x.remove()});   // tira da mesa as substâncias
+  $('#zera').close();painel();dica();aviso('Descobertas zeradas');
+};
+
+// ===================== ÁREA DO ADMINISTRADOR (descobertas + crafting) =====================
+// Só o hash SHA-256 da senha fica no código (a senha em si não aparece). Como o jogo roda no navegador,
+// isto é uma trava simples: não é segurança real contra quem edita o código.
+const HASH='12ed51c39078b3110952131a0ddbc9d3c987ff7ae3b0a549451c0b69b83c7534';
+let adm=true,alvo='d';                             // adm: liberado até recarregar a página; alvo: aba aberta
+const sha=async t=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)))].map(x=>x.toString(16).padStart(2,'0')).join('');
+const rot=i=>`${DB[i].s} ${DB[i].n}`;
+function aba(t){                                    // alterna entre "Descobertas" e "Crafting"
+  alvo=t;$$('#abas button').forEach(b=>b.classList.toggle('on',b.dataset.t==t));
+  $('#adg').hidden=t!='d';$('#acr').hidden=t!='c';
+  $('#adt').textContent=t=='d'?`Desbloqueadas: ${found.length} / ${SUBS.length}`:`${Object.keys(REC).length} receitas no jogo (verde = resultado já descoberto)`;
+}
+function verAdm(){                                  // tela de senha ou conteúdo (verde = desbloqueado, cinza = bloqueado)
+  $('#adp').hidden=adm;$('#adv').hidden=!adm;
+  if(!adm){$('#ads').value='';$('#ade').textContent='';return}
+  $('#adg').innerHTML=SUBS.map(i=>{const d=DB[i],ok=found.includes(i);
+    return `<div class="dc ${ok?'ok':'bl'}"><span class="s">${ok?d.s:'🔒'}</span><b>${d.n}</b><small>${d.sub}</small></div>`}).join('');
+  $('#acr').innerHTML=Object.keys(REC).map(k=>{const id=REC[k],[a,b]=ORD[k];
+    return `<div class="cr ${found.includes(id)?'ok':'bl'}">${rot(a)} + ${rot(b)} → <b>${rot(id)}</b><small>${equacao(a,b,id)}</small></div>`}).join('');
+  aba(alvo);
+}
+function abre(t){alvo=t;verAdm();$('#adm').showModal();if(!adm)$('#ads').focus()}
+async function entrar(){
+  try{adm=(await sha($('#ads').value))==HASH}catch(e){$('#ade').textContent='Verificação indisponível neste navegador.';return}
+  if(adm)verAdm();else{$('#ade').textContent='Senha incorreta.';$('#ads').select()}
+}
+$('#desc').onclick=()=>abre('d');
+$('#craf').onclick=()=>abre('c');
+$$('#abas button').forEach(b=>b.onclick=()=>aba(b.dataset.t));
+$('#adx').onclick=$('#adf').onclick=()=>$('#adm').close();
+$('#adok').onclick=entrar;
+$('#ads').onkeydown=e=>{if(e.key=='Enter')entrar()};
+
+// ===================== CONTA GOOGLE + GOOGLE DRIVE =====================
+// O progresso (substâncias descobertas) sempre fica salvo neste navegador. Entrando com o Google, uma cópia vai também
+// para o seu Drive (arquivo "mesa-de-fusao-progresso.json") e é mesclada com a dos seus outros aparelhos.
+// Como criar o ID do cliente (uma vez só):
+//  1) console.cloud.google.com → crie um projeto;  2) "APIs e serviços" → ative a "Google Drive API";
+//  3) "Google Auth Platform" → configure (público "Externo") e adicione o seu Gmail em "Test users";
+//  4) "Clients" → "Create client" → "Web application" → em "Authorized JavaScript origins" coloque o endereço do site
+//     (testes: http://localhost:8000 · GitHub Pages: https://SEU-USUARIO.github.io) → "Create";
+//  5) copie o "Client ID" e cole abaixo (ele NÃO é segredo; não existe "client secret" neste tipo de site).
+const GOOGLE_CLIENT_ID='COLE_AQUI_O_SEU_ID_DE_CLIENTE.apps.googleusercontent.com';
+const ESC_DRIVE='https://www.googleapis.com/auth/drive.file';   // só dá acesso aos arquivos criados por este próprio site
+const ESCOPOS='openid email profile '+ESC_DRIVE;
+const ARQ='mesa-de-fusao-progresso.json',DRIVE='https://www.googleapis.com/drive/v3/files',ENVIO='https://www.googleapis.com/upload/drive/v3/files';
+let guser=null,gtok='',gexp=0,gcli,gesp,gtm,gocup=0,gdnv=0,gavisou=0;   // conta, token (vale ~1 h), cliente OAuth e controles
+try{guser=JSON.parse(ls('qf.guser')||'null')}catch(e){}
+const tokOk=()=>!!gtok&&Date.now()<gexp;
+const hora=()=>new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+
+function menuG(abrir){                              // menu da conta (sincronizar / sair)
+  $('#gmenu').hidden=!abrir;$('#g').setAttribute('aria-expanded',!!abrir);if(abrir)gEst();
+}
+function gConta(){                                  // foto e nome na barra e no menu
+  const on=!!guser,ic=$('#gic');ic.textContent='';
+  if(on&&guser.foto){const im=new Image();im.alt='';im.referrerPolicy='no-referrer';im.src=guser.foto;ic.append(im)}else ic.textContent='☁️';
+  $('#gtx').textContent=on?' '+guser.nome:' Entrar com Google';
+  $('#g').title=on?'Conta Google: '+(guser.email||guser.nome):'Entrar com Google para salvar suas descobertas no Drive';
+  $('#gnome').textContent=on?guser.nome:'';$('#gmail').textContent=on?guser.email:'';$('#gdot').hidden=!on;
+}
+function gEst(est,msg){                             // bolinha: ok (verde) · pen (amarela) · err (vermelha)
+  if(est!==undefined)$('#gdot').className='gd '+est;
+  if(msg!==undefined)$('#gst').textContent=msg;
+  $('#gsync').textContent=tokOk()?'🔄 Sincronizar agora':'🔑 Reconectar ao Google';
+}
+
+// --- login: abre a janela do Google (precisa ser chamado direto de um clique) ---
+function pedirToken(){
+  return new Promise((ok,no)=>{
+    gcli=gcli||google.accounts.oauth2.initTokenClient({
+      client_id:GOOGLE_CLIENT_ID,scope:ESCOPOS,
+      callback:r=>{const e=gesp;gesp=null;if(e)r.error?e.no(r):e.ok(r)},
+      error_callback:r=>{const e=gesp;gesp=null;if(e)e.no(r)}
+    });
+    const cfg={prompt:''};if(guser?.email)cfg.login_hint=guser.email;   // já sabemos a conta: pula a escolha
+    gesp={ok,no};gcli.requestAccessToken(cfg);
+  });
+}
+async function entrarG(){
+  if(location.protocol=='file:')return aviso('Abra o site por http://localhost (ou hospedado), não pelo arquivo',6000);
+  if(GOOGLE_CLIENT_ID.startsWith('COLE_AQUI'))return aviso('Falta colar o ID do cliente do Google no código',6000);
+  if(!window.google?.accounts?.oauth2)return aviso('O Google ainda está carregando — tente de novo',3500);
+  if(gesp)return;
+  try{
+    const r=await pedirToken();
+    if(!google.accounts.oauth2.hasGrantedAllScopes(r,ESC_DRIVE))return aviso('Sem a permissão do Drive não dá para salvar lá',4500);
+    gtok=r.access_token;gexp=Date.now()+(r.expires_in-60)*1000;gavisou=0;
+    try{                                            // nome, e-mail e foto para mostrar na barra
+      const u=await(await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+gtok}})).json();
+      guser={email:u.email||'',nome:u.given_name||u.name||'Conta Google',foto:u.picture||''};
+    }catch(e){guser=guser||{email:'',nome:'Conta Google',foto:''}}
+    ls('qf.guser',JSON.stringify(guser));gConta();
+    await sincronizar(true);
+  }catch(e){
+    if(e?.type=='popup_closed')return;              // fechou a janela: sem alarde
+    aviso(e?.type=='popup_failed_to_open'?'O navegador bloqueou a janela do Google':'Não foi possível entrar com o Google',4000);
+    console.warn('Google:',e);
+  }
+}
+function sairG(){                                   // "sair" só esquece a conta aqui; o progresso continua no navegador
+  clearTimeout(gtm);gtok='';gexp=0;guser=null;ls('qf.guser','');
+  gConta();gEst('','');menuG(false);
+  aviso('Você saiu do Google. O progresso continua salvo neste navegador.',4000);
+}
+
+// --- Drive: um único arquivo JSON {found, zerou, mod} ---
+async function gfetch(url,op={}){
+  const r=await fetch(url,{...op,headers:{Authorization:'Bearer '+gtok,...op.headers}});
+  if(!r.ok){const e=new Error('Drive '+r.status);e.status=r.status;e.corpo=await r.text().catch(()=>'');throw e}
+  return r;
+}
+async function acharArq(){                          // procura o arquivo (com o escopo drive.file só aparecem os criados por este site)
+  const p=new URLSearchParams({q:`name='${ARQ}' and trashed=false`,orderBy:'modifiedTime desc',pageSize:'1',fields:'files(id)'});
+  return(await(await gfetch(`${DRIVE}?${p}`)).json()).files?.[0]?.id;
+}
+async function lerArq(id){
+  const r=await gfetch(`${DRIVE}/${id}?alt=media`);
+  try{return await r.json()}catch(e){return null}   // arquivo vazio ou estragado: tratamos como "sem dados"
+}
+async function gravarArq(id,dados){
+  if(!id)id=(await(await gfetch(`${DRIVE}?fields=id`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:ARQ,mimeType:'application/json'})})).json()).id;
+  await gfetch(`${ENVIO}/${id}?uploadType=media`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(dados)});
+}
+
+// Baixa o arquivo do Drive, MESCLA com o que há aqui (união das descobertas) e envia o resultado de volta.
+// "zerou" = momento do último "Zerar descobertas" feito já conectado: quem tem dados mais antigos que ele é descartado,
+// assim zerar num aparelho não é desfeito por outro aparelho que ainda tinha as descobertas antigas.
+async function sincronizar(manual){
+  if(!guser)return;
+  if(gocup){gdnv=1;return}                          // já está sincronizando: repete quando terminar
+  if(!tokOk()){
+    gEst('pen','Sessão do Google expirada — clique em "Reconectar ao Google".');
+    if(!gavisou){gavisou=1;aviso('Sessão do Google expirada — toque na sua conta para reconectar',4500)}
+    return;
+  }
+  gocup=1;gEst('pen','Sincronizando…');
+  try{
+    const id=await acharArq(),rem=id?await lerArq(id):null;
+    const rf=Array.isArray(rem?.found)?rem.found:[],rz=+rem?.zerou||0,rm=+rem?.mod||0;
+    const localOk=!(rz>mod),remotoOk=!(zerou>rm);   // o lado mais velho que um "zerar" é descartado
+    const lista=[...new Set([...(remotoOk?rf:[]),...(localOk?found:[])])].filter(i=>DB[i]&&!DB[i].el);
+    const mudou=lista.join()!=found.join();
+    found=lista;zerou=Math.max(zerou,rz);mod=Date.now();
+    ls('qf.found',JSON.stringify(found));ls('qf.mod',mod);ls('qf.zerou',zerou);
+    if(mudou)painel();
+    if(!rem||!remotoOk||lista.join()!=rf.join()||zerou!=rz)
+      await gravarArq(id,{app:'mesa-de-fusao',v:1,found,zerou,mod,salvo:new Date().toISOString()});
+    gEst('ok','Salvo no Drive às '+hora());
+    if(manual)aviso('Sincronizado com o Google Drive ✓');
+  }catch(e){
+    console.warn('Drive:',e);
+    if(e.status==401){gtok='';gEst('pen','Sessão do Google expirada — clique em "Reconectar ao Google".');if(manual)aviso('Sessão do Google expirada — reconecte',3500)}
+    else if(e.status==403&&/accessNotConfigured|has not been used|disabled/i.test(e.corpo||'')){
+      gEst('err','A Google Drive API não está ativada neste projeto do Google Cloud.');aviso('Ative a "Google Drive API" no Google Cloud (passo 2)',6000)}
+    else{gEst('err','Não deu para sincronizar agora. Tentaremos de novo na próxima descoberta.');if(manual)aviso('Não foi possível sincronizar com o Drive',3500)}
+  }finally{gocup=0;if(gdnv){gdnv=0;sincronizar()}}
+}
+function agendar(){                                 // chamado a cada mudança: espera 1,5 s e sincroniza (várias mudanças = 1 envio)
+  if(!guser)return;gEst('pen','Enviando alterações…');clearTimeout(gtm);gtm=setTimeout(sincronizar,1500);
+}
+
+$('#g').onclick=()=>guser?menuG($('#gmenu').hidden):entrarG();
+$('#gsync').onclick=()=>{menuG(false);tokOk()?sincronizar(true):entrarG()};
+$('#gsair').onclick=sairG;
+addEventListener('pointerdown',e=>{if(!e.target.closest('#gmenu,#g'))menuG(false)});
+gConta();gEst(guser?'pen':'',guser?'Clique em "Reconectar ao Google" para sincronizar.':'');
+
+// ===================== TEMA, EVENTOS E INÍCIO =====================
+function tema(t){root.dataset.theme=t;ls('qf.tema',t);$('#tema').textContent=t=='dark'?'☀️ Claro':'🌙 Escuro';if(still&&mols.length)quadro()}
+$('#lista').onpointerdown=e=>{                      // arrastar do painel (mouse/caneta)
+  tocou=e.pointerType=='touch';const r=e.target.closest('.row');
+  if(r&&!tocou&&!e.button){e.preventDefault();arrastar(criar(r.dataset.id,e.clientX,e.clientY),e,1)}
+};
+$('#lista').onclick=e=>{const r=e.target.closest('.row');if(r&&(tocou||!e.detail))adicionar(r.dataset.id)};  // toque ou teclado
+$('#q').oninput=()=>painel();
+$('#limpar').onclick=()=>{$$('.item').forEach(x=>x.remove());dica()};
+$('#tema').onclick=()=>tema(root.dataset.theme=='dark'?'light':'dark');
+new ResizeObserver(ajusta).observe(mesa);
+tema(ls('qf.tema')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'));
+painel();dica();ajusta();mols=Array.from({length:16},nova);quadro();
+</script>
+</body>
+</html>
